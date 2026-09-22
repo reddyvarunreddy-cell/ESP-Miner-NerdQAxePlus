@@ -101,9 +101,9 @@ void DisplayDriver::lvglFlushCallback(lv_disp_drv_t* drv, const lv_area_t* area,
     int sx1 = area->x1, sx2 = area->x2, sy1 = area->y1, sy2 = area->y2;
     int srcW = sx2 - sx1 + 1;
     int dx1 = (sx1 * TRI_SCALE_NUM + TRI_SCALE_DEN - 1) / TRI_SCALE_DEN;       // first dst col whose src >= sx1
-    int dx2 = ((sx2 + 1) * TRI_SCALE_NUM) / TRI_SCALE_DEN - 1;                 // last dst col whose src <= sx2
+    int dx2 = ((sx2 + 1) * TRI_SCALE_NUM + TRI_SCALE_DEN - 1) / TRI_SCALE_DEN - 1;   // last dst col whose src <= sx2 (ceil)
     int dy1 = (sy1 * TRI_SCALE_NUM + TRI_SCALE_DEN - 1) / TRI_SCALE_DEN;
-    int dy2 = ((sy2 + 1) * TRI_SCALE_NUM) / TRI_SCALE_DEN - 1;
+    int dy2 = ((sy2 + 1) * TRI_SCALE_NUM + TRI_SCALE_DEN - 1) / TRI_SCALE_DEN - 1;
     int dstW = dx2 - dx1 + 1, dstH = dy2 - dy1 + 1;
     if (!s_scaleBuf || dstW <= 0 || dstH <= 0 || dstW * dstH > TRI_SCALE_BUF_PX) {
         // no bounce buffer: draw unscaled (never expected; keeps the display alive)
