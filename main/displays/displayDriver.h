@@ -52,8 +52,7 @@
 #define TRI_DST_W ((TDISPLAYS3_LCD_H_RES * TRI_SCALE_NUM) / TRI_SCALE_DEN)   // 480
 #define TRI_DST_H ((TDISPLAYS3_LCD_V_RES * TRI_SCALE_NUM) / TRI_SCALE_DEN)   // 255
 #define TRI_PANEL_H 320
-#define TRI_SRC_ROWS_MAX (LVGL_LCD_BUF_SIZE / TDISPLAYS3_LCD_H_RES + 2)
-#define TRI_SCALE_BUF_PX (TRI_DST_W * ((TRI_SRC_ROWS_MAX * TRI_SCALE_NUM) / TRI_SCALE_DEN + 3))
+#define TRI_FRAME_PX (TRI_DST_W * TRI_DST_H)   // full scaled frame, sent in one DMA transfer from PSRAM
 
 // Bit sizes for LCD commands and parameters
 #define TDISPLAYS3_LCD_CMD_BITS 8   // Bits for LCD commands

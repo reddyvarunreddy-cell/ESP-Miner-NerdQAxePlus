@@ -90,35 +90,35 @@ bool DisplayDriver::notifyLvglFlushReady(esp_lcd_panel_io_handle_t panelIo, esp_
     return false;
 }
 
-// trinetra 2026-09-22: upscale each flushed 320x170 area by 3:2 onto the 480x320 panel (nearest neighbour).
-// Every panel pixel maps to exactly one UI pixel (src = dst*2/3), and the dest range of an area is exactly the set of
-// panel pixels whose source lies inside it, so consecutive flushes tile the panel without seams or overlaps.
-static lv_color_t *s_scaleBuf = nullptr;
-static uint16_t s_colMap[TRI_DST_W];
+// trinetra 2026-09-22: LVGL renders the whole 320x170 frame (full_refresh, PSRAM); the flush upscales it 3:2 with
+// bilinear filtering into a 480x255 PSRAM frame and sends it in ONE DMA transfer (i80 bus has psram_trans_align).
+// Weights: dst x -> src 2x/3: phase 0 = exact pixel, phase 1 = 2/3:1/3, phase 2 = 1/3:2/3 (same for rows).
+static lv_color_t *s_frame = nullptr;
+static uint16_t s_x0[TRI_DST_W]; static uint8_t s_wx[TRI_DST_W];   // src column + weight of the LEFT pixel (0..255)
+static uint16_t s_y0[TRI_DST_H]; static uint8_t s_wy[TRI_DST_H];
 
 void DisplayDriver::lvglFlushCallback(lv_disp_drv_t* drv, const lv_area_t* area, lv_color_t* colorMap) {
     esp_lcd_panel_handle_t panelHandle = (esp_lcd_panel_handle_t)drv->user_data;
-    int sx1 = area->x1, sx2 = area->x2, sy1 = area->y1, sy2 = area->y2;
-    int srcW = sx2 - sx1 + 1;
-    int dx1 = (sx1 * TRI_SCALE_NUM + TRI_SCALE_DEN - 1) / TRI_SCALE_DEN;       // first dst col whose src >= sx1
-    int dx2 = ((sx2 + 1) * TRI_SCALE_NUM + TRI_SCALE_DEN - 1) / TRI_SCALE_DEN - 1;   // last dst col whose src <= sx2 (ceil)
-    int dy1 = (sy1 * TRI_SCALE_NUM + TRI_SCALE_DEN - 1) / TRI_SCALE_DEN;
-    int dy2 = ((sy2 + 1) * TRI_SCALE_NUM + TRI_SCALE_DEN - 1) / TRI_SCALE_DEN - 1;
-    int dstW = dx2 - dx1 + 1, dstH = dy2 - dy1 + 1;
-    if (!s_scaleBuf || dstW <= 0 || dstH <= 0 || dstW * dstH > TRI_SCALE_BUF_PX) {
-        // no bounce buffer: draw unscaled (never expected; keeps the display alive)
-        esp_lcd_panel_draw_bitmap(panelHandle, sx1, sy1, sx2 + 1, sy2 + 1, colorMap);
+    bool full = (area->x1 == 0 && area->y1 == 0 && area->x2 == TDISPLAYS3_LCD_H_RES - 1 && area->y2 == TDISPLAYS3_LCD_V_RES - 1);
+    if (!s_frame || !full) {
+        // no scaled frame (allocation failed) or a partial area: draw unscaled so the display stays alive
+        esp_lcd_panel_draw_bitmap(panelHandle, area->x1, area->y1, area->x2 + 1, area->y2 + 1, colorMap);
         return;
     }
-    lv_color_t *dst = s_scaleBuf;
-    for (int dy = dy1; dy <= dy2; dy++) {
-        int sy = (dy * TRI_SCALE_DEN) / TRI_SCALE_NUM - sy1;
-        const lv_color_t *srow = colorMap + sy * srcW;
-        for (int dx = dx1; dx <= dx2; dx++) {
-            *dst++ = srow[s_colMap[dx] - sx1];
+    const int W = TDISPLAYS3_LCD_H_RES;
+    lv_color_t *dst = s_frame;
+    for (int dy = 0; dy < TRI_DST_H; dy++) {
+        const lv_color_t *r0 = colorMap + s_y0[dy] * W;
+        const lv_color_t *r1 = r0 + ((s_y0[dy] + 1 < TDISPLAYS3_LCD_V_RES) ? W : 0);
+        uint8_t wy = s_wy[dy];
+        for (int dx = 0; dx < TRI_DST_W; dx++) {
+            int x0 = s_x0[dx]; int x1 = (x0 + 1 < W) ? x0 + 1 : x0; uint8_t wx = s_wx[dx];
+            lv_color_t top = (wx == 255) ? r0[x0] : lv_color_mix(r0[x0], r0[x1], wx);
+            lv_color_t bot = (wx == 255) ? r1[x0] : lv_color_mix(r1[x0], r1[x1], wx);
+            *dst++ = (wy == 255) ? top : lv_color_mix(top, bot, wy);
         }
     }
-    esp_lcd_panel_draw_bitmap(panelHandle, dx1, dy1, dx2 + 1, dy2 + 1, s_scaleBuf);
+    esp_lcd_panel_draw_bitmap(panelHandle, 0, 0, TRI_DST_W, TRI_DST_H, s_frame);
 }
 
 /************ DISPLAY TURN ON/OFF FUNCTIONS *************/
@@ -729,7 +729,7 @@ lv_obj_t *DisplayDriver::initTDisplayS3(void)
                                                    TDISPLAYS3_PIN_NUM_DATA7,
                                                },
                                            .bus_width = 8,
-                                           .max_transfer_bytes = TRI_SCALE_BUF_PX * sizeof(uint16_t),   // trinetra: the scaled bounce buffer is the largest transfer
+                                           .max_transfer_bytes = TRI_FRAME_PX * sizeof(uint16_t),   // trinetra: one full scaled frame per transfer
                                            .psram_trans_align = LCD_PSRAM_TRANS_ALIGN,
                                            .sram_trans_align = LCD_SRAM_TRANS_ALIGN};
     ESP_ERROR_CHECK(esp_lcd_new_i80_bus(&bus_config, &i80_bus));
@@ -793,24 +793,30 @@ lv_obj_t *DisplayDriver::initTDisplayS3(void)
     lv_init();
     // alloc draw buffers used by LVGL
     // it's recommended to choose the size of the draw buffer(s) to be at least 1/10 screen sized
-    lv_color_t *buf1 = (lv_color_t*) MALLOC_DMA(LVGL_LCD_BUF_SIZE * sizeof(lv_color_t));
+    // trinetra: full 320x170 LVGL frame in PSRAM (LVGL renders into it; the flush reads it), scaled frame in PSRAM (DMA source)
+    const size_t frame_px = (size_t) TDISPLAYS3_LCD_H_RES * TDISPLAYS3_LCD_V_RES;
+    lv_color_t *buf1 = (lv_color_t*) MALLOC(frame_px * sizeof(lv_color_t));
     assert(buf1);
-    // trinetra: bounce buffer for the 3:2 upscale + the dst->src column map
-    s_scaleBuf = (lv_color_t*) MALLOC_DMA(TRI_SCALE_BUF_PX * sizeof(lv_color_t));
-    if (!s_scaleBuf) {
-        ESP_LOGE(TAG, "scale buffer (%d px) not allocated - drawing unscaled", (int) TRI_SCALE_BUF_PX);
+    s_frame = (lv_color_t*) heap_caps_aligned_alloc(64, TRI_FRAME_PX * sizeof(lv_color_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!s_frame) {
+        ESP_LOGE(TAG, "scaled frame (%d px) not allocated - drawing unscaled", (int) TRI_FRAME_PX);
     }
     for (int dx = 0; dx < TRI_DST_W; dx++) {
-        s_colMap[dx] = (uint16_t) ((dx * TRI_SCALE_DEN) / TRI_SCALE_NUM);
+        int n = dx * TRI_SCALE_DEN; s_x0[dx] = (uint16_t) (n / TRI_SCALE_NUM); int ph = n % TRI_SCALE_NUM;
+        s_wx[dx] = (ph == 0) ? 255 : (ph == 1 ? 170 : 85);
     }
-    // initialize LVGL draw buffers
-    lv_disp_draw_buf_init(&disp_buf, buf1, NULL, LVGL_LCD_BUF_SIZE);
+    for (int dy = 0; dy < TRI_DST_H; dy++) {
+        int n = dy * TRI_SCALE_DEN; s_y0[dy] = (uint16_t) (n / TRI_SCALE_NUM); int ph = n % TRI_SCALE_NUM;
+        s_wy[dy] = (ph == 0) ? 255 : (ph == 1 ? 170 : 85);
+    }
+    lv_disp_draw_buf_init(&disp_buf, buf1, NULL, frame_px);
 
     ESP_LOGI(TAG, "Register display driver to LVGL");
     lv_disp_drv_init(&disp_drv);
     disp_drv.hor_res = TDISPLAYS3_LCD_H_RES;
     disp_drv.ver_res = TDISPLAYS3_LCD_V_RES;
     disp_drv.flush_cb = lvglFlushCallback;
+    disp_drv.full_refresh = 1;   // trinetra: always hand the flush the whole frame
     disp_drv.draw_buf = &disp_buf;
     disp_drv.user_data = panel_handle;
     lv_disp_t *disp = lv_disp_drv_register(&disp_drv);
