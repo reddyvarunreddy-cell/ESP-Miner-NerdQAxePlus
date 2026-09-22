@@ -749,14 +749,18 @@ lv_obj_t *DisplayDriver::initTDisplayS3(void)
     esp_lcd_panel_swap_xy(panel_handle, true);
 
     Board *board = SYSTEM_MODULE.getBoard();
+    // trinetra 2026-09-22: this hardware revision carries a ~480x320 panel whose scan direction differs from the
+    // 170x320 glass upstream targets; measured: mirror(x) and mirror(y) both give a mirrored image, so the correct
+    // choices are both axes or neither. flipscreen keeps selecting between the two 180-degree options.
     if (!board->isFlipScreenEnabled()) {
-        esp_lcd_panel_mirror(panel_handle, true, false);
+        esp_lcd_panel_mirror(panel_handle, true, true);
     } else {
-        esp_lcd_panel_mirror(panel_handle, false, true);
+        esp_lcd_panel_mirror(panel_handle, false, false);
     }
 
     // the gap is LCD panel specific, even panels with the same driver IC, can have different gap value
-    esp_lcd_panel_set_gap(panel_handle, 0, 35);
+    // trinetra 2026-09-22: centre the 320x170 UI on the 480x320 panel (upstream: 0,35 centred a 170-px glass in a 240-px RAM)
+    esp_lcd_panel_set_gap(panel_handle, (480 - TDISPLAYS3_LCD_H_RES) / 2, (320 - TDISPLAYS3_LCD_V_RES) / 2);
 
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
 
