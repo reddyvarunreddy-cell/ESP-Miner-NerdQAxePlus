@@ -45,7 +45,15 @@
 // LCD resolution and buffer size
 #define TDISPLAYS3_LCD_H_RES 320                                            // Horizontal resolution
 #define TDISPLAYS3_LCD_V_RES 170                                            // Vertical resolution
-#define LVGL_LCD_BUF_SIZE (TDISPLAYS3_LCD_H_RES * TDISPLAYS3_LCD_V_RES) / 4 // Buffer size for display
+#define LVGL_LCD_BUF_SIZE (TDISPLAYS3_LCD_H_RES * TDISPLAYS3_LCD_V_RES) / 8 // Buffer size for display (trinetra: /8, the scaled bounce buffer takes the rest)
+// trinetra 2026-09-22: this hardware revision has a 480x320 panel; the 320x170 UI is upscaled 3:2 in the flush path
+#define TRI_SCALE_NUM 3
+#define TRI_SCALE_DEN 2
+#define TRI_DST_W ((TDISPLAYS3_LCD_H_RES * TRI_SCALE_NUM) / TRI_SCALE_DEN)   // 480
+#define TRI_DST_H ((TDISPLAYS3_LCD_V_RES * TRI_SCALE_NUM) / TRI_SCALE_DEN)   // 255
+#define TRI_PANEL_H 320
+#define TRI_SRC_ROWS_MAX (LVGL_LCD_BUF_SIZE / TDISPLAYS3_LCD_H_RES + 2)
+#define TRI_SCALE_BUF_PX (TRI_DST_W * ((TRI_SRC_ROWS_MAX * TRI_SCALE_NUM) / TRI_SCALE_DEN + 3))
 
 // Bit sizes for LCD commands and parameters
 #define TDISPLAYS3_LCD_CMD_BITS 8   // Bits for LCD commands
