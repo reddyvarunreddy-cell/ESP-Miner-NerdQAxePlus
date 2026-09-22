@@ -270,8 +270,11 @@ void set_next_enonce(int pool, char *enonce, int enonce2_len)
     ensureV1(pool)->set_next_enonce(enonce, enonce2_len);
 }
 
+static bool s_notify_pending[2] = {false, false};   // trinetra: set on every mining.notify, cleared when a job is built from it
+
 void create_job_mining_notify(int pool, mining_notify *notify, bool abandonWork)
 {
+    s_notify_pending[pool] = true;
     {
         PThreadGuard g(current_stratum_job_mutex);
         // clear jobs for pool
@@ -361,6 +364,15 @@ void create_jobs_task(void *pvParameters)
                 ESP_LOGI(TAG, "(%s) New Work Received %s", active_pool_str, mi->getJobId());
             }
 
+            // trinetra 2026-09-22: with no extranonce2 the POOL is the page counter (one notify = one page with its own
+            // number in the coinbase). The periodic job timer must not add pages of the same notify, so at width 0 a job
+            // is built only when a new notify has arrived since the last job.
+            if (s_miningInfoV1[active_pool].extranonce_2_len == 0 && miningInfo[active_pool] == &s_miningInfoV1[active_pool]) {
+                if (!s_notify_pending[active_pool]) {
+                    continue;
+                }
+                s_notify_pending[active_pool] = false;
+            }
             uint32_t asic_diff = STRATUM_MANAGER->selectAsicDiff(active_pool, mi->getActiveDifficulty());
             next_job = mi->buildBmJob(extranonce_2, active_pool, asic_diff);
         } // mutex
