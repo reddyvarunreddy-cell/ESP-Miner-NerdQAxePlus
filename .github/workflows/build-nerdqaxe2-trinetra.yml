@@ -14,7 +14,10 @@ jobs:
     - name: Version
       run: |
         git fetch --tags || true
-        echo "VERSION_TAG=$(git describe --tags --abbrev=0 2>/dev/null || git rev-parse --short HEAD)-trinetra-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        version=$(git describe --tags --abbrev=0 2>/dev/null || git rev-parse --short HEAD)
+        echo "${version}" > version.txt      # ESP-IDF reads version.txt into the app descriptor (as upstream does)
+        echo "VERSION_TAG=${version}" >> $GITHUB_ENV
+        echo "version.txt=${version}"
     - name: Set Target
       run: |
         docker run --rm --user root -e BOARD=NERDQAXEPLUS2 -v $PWD:/home/builder/project shufps/esp-idf-builder:0.0.1 idf.py set-target esp32s3
