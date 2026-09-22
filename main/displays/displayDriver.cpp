@@ -102,8 +102,8 @@ void DisplayDriver::lvglFlushCallback(lv_disp_drv_t* drv, const lv_area_t* area,
     int srcW = sx2 - sx1 + 1;
     int dx1 = (sx1 * TRI_SCALE_NUM + TRI_SCALE_DEN - 1) / TRI_SCALE_DEN;       // first dst col whose src >= sx1
     int dx2 = ((sx2 + 1) * TRI_SCALE_NUM + TRI_SCALE_DEN - 1) / TRI_SCALE_DEN - 1;   // last dst col whose src <= sx2 (ceil)
-    int dy1 = (sy1 * TRI_Y_NUM + TRI_Y_DEN - 1) / TRI_Y_DEN;                    // vertical ratio 32:17
-    int dy2 = ((sy2 + 1) * TRI_Y_NUM + TRI_Y_DEN - 1) / TRI_Y_DEN - 1;
+    int dy1 = (sy1 * TRI_SCALE_NUM + TRI_SCALE_DEN - 1) / TRI_SCALE_DEN;
+    int dy2 = ((sy2 + 1) * TRI_SCALE_NUM + TRI_SCALE_DEN - 1) / TRI_SCALE_DEN - 1;
     int dstW = dx2 - dx1 + 1, dstH = dy2 - dy1 + 1;
     if (!s_scaleBuf || dstW <= 0 || dstH <= 0 || dstW * dstH > TRI_SCALE_BUF_PX) {
         // no bounce buffer: draw unscaled (never expected; keeps the display alive)
@@ -112,7 +112,7 @@ void DisplayDriver::lvglFlushCallback(lv_disp_drv_t* drv, const lv_area_t* area,
     }
     lv_color_t *dst = s_scaleBuf;
     for (int dy = dy1; dy <= dy2; dy++) {
-        int sy = (dy * TRI_Y_DEN) / TRI_Y_NUM - sy1;
+        int sy = (dy * TRI_SCALE_DEN) / TRI_SCALE_NUM - sy1;
         const lv_color_t *srow = colorMap + sy * srcW;
         for (int dx = dx1; dx <= dx2; dx++) {
             *dst++ = srow[s_colMap[dx] - sx1];

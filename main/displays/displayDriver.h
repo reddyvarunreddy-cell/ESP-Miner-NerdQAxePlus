@@ -50,12 +50,10 @@
 #define TRI_SCALE_NUM 3
 #define TRI_SCALE_DEN 2
 #define TRI_DST_W ((TDISPLAYS3_LCD_H_RES * TRI_SCALE_NUM) / TRI_SCALE_DEN)   // 480
-#define TRI_Y_NUM 32                                                       // vertical stretch 170 -> 320 = 32:17 (user: fill top/bottom)
-#define TRI_Y_DEN 17
-#define TRI_DST_H ((TDISPLAYS3_LCD_V_RES * TRI_Y_NUM) / TRI_Y_DEN)              // 320
+#define TRI_DST_H ((TDISPLAYS3_LCD_V_RES * TRI_SCALE_NUM) / TRI_SCALE_DEN)   // 255
 #define TRI_PANEL_H 320
 #define TRI_SRC_ROWS_MAX (LVGL_LCD_BUF_SIZE / TDISPLAYS3_LCD_H_RES + 2)
-#define TRI_SCALE_BUF_PX (TRI_DST_W * ((TRI_SRC_ROWS_MAX * TRI_Y_NUM) / TRI_Y_DEN + 3))
+#define TRI_SCALE_BUF_PX (TRI_DST_W * ((TRI_SRC_ROWS_MAX * TRI_SCALE_NUM) / TRI_SCALE_DEN + 3))
 
 // Bit sizes for LCD commands and parameters
 #define TDISPLAYS3_LCD_CMD_BITS 8   // Bits for LCD commands
