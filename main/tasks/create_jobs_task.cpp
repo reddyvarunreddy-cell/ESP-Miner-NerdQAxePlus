@@ -46,6 +46,7 @@ class MiningInfoV1 : public MiningInfoBase {
     int next_extranonce_2_len = 0;
 
     uint32_t stratum_difficulty = 8192;
+    uint32_t ntime_roll = 0;   // trinetra: seconds added to the notify ntime for jobs built from the same notify (extranonce2 width 0)
     uint32_t active_stratum_difficulty = 8192;
     uint32_t version_mask = 0;
 
@@ -91,6 +92,15 @@ class MiningInfoV1 : public MiningInfoBase {
         // we need malloc because we will save it in the job array
         bm_job *next_job = (bm_job *) malloc(sizeof(bm_job));
         construct_bm_job(current_job, merkle_root, version_mask, next_job);
+        if (extranonce_2_len == 0) {
+            // trinetra: with no extranonce2 every job from the same notify would be the SAME page (same coinbase, same
+            // ntime) and the chips would re-hash it (measured 2026-09-22: 23% duplicate shares). Roll ntime forward
+            // by one second per job so each page is unique; bounded well inside the 2-hour consensus window.
+            next_job->ntime = current_job->ntime + ntime_roll;
+            if (ntime_roll < 3600) {
+                ntime_roll++;
+            }
+        }
         next_job->jobid = strdup(current_job->job_id);
         next_job->extranonce2 = strdup(extranonce_2_str);
         next_job->pool_diff = active_stratum_difficulty;
@@ -197,6 +207,7 @@ class MiningInfoV1 : public MiningInfoBase {
 
         // set active difficulty with the mining.notify command
         active_stratum_difficulty = stratum_difficulty;
+        ntime_roll = 0;   // trinetra: new notify = fresh ntime base
     }
 };
 
