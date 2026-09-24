@@ -60,7 +60,7 @@ menu "Stratum Configuration"
 
     config STRATUM_URL
         string "Stratum Address"
-        default "public-pool.io"
+        default "192.168.1.5"
         help
             The example will connect to this Stratum pool address.
 
@@ -73,7 +73,7 @@ menu "Stratum Configuration"
 
     config STRATUM_USER
         string "Stratum username"
-        default "bc1q7n70rumyv6lvu8avpml0c3uggvssfu52egum3q.nerdqaxe"
+        default "bc1qsssq60papapskx9quzddgzan0qga009230zmc3.nerdqaxe"
         help
             Stratum user to use with pool
 
@@ -107,26 +107,26 @@ menu "Stratum Configuration"
 
     config STRATUM_FALLBACK_URL
         string "Stratum fallback Address"
-        default ""
+        default "140.245.196.193"
         help
             The fallback stratum server host
 
     config STRATUM_FALLBACK_PORT
         int "Stratum fallback Port"
         range 0 65535
-        default 0
+        default 3333
         help
             The fallback stratum server port to connect to.
 
     config STRATUM_FALLBACK_USER
         string "Stratum fallback username"
-        default ""
+        default "bc1qsssq60papapskx9quzddgzan0qga009230zmc3.nerdqaxe"
         help
             Stratum user to use with fallback pool
 
     config STRATUM_FALLBACK_PW
         string "Stratum fallback password"
-        default ""
+        default "x"
         help
             Stratum password to use with fallback pool
 
