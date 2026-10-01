@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "esp_crt_bundle.h"
 #include "esp_transport.h"
 #include "esp_transport_tcp.h"
@@ -11,6 +12,11 @@
 #include "stratum_transport.h"
 
 static const char* TAG = "stratum_transport";
+
+// trinetra12: a pool that is alive sends data regularly (ours: one mining.notify every ~62 s, plus a reply to every
+// share). If NOTHING arrives for this long the link is treated as dead and the stratum task reconnects. This is the
+// second line of defence behind TCP keepalive (which only proves the peer's TCP stack answers, not that the pool does).
+static const int64_t RX_SILENCE_LIMIT_US = 180LL * 1000LL * 1000LL;
 
 StratumTransport::StratumTransport(bool use_tls)
     : m_use_tls(use_tls), m_t(nullptr) {}
@@ -59,6 +65,10 @@ bool StratumTransport::connect(const char* host, const char* ip, uint16_t port)
     }
 
     ESP_LOGI(TAG, "Connected");
+    ESP_LOGI(TAG, "TCP keepalive %s; rx-silence limit %d s",
+             m_keepAlive.keep_alive_enable ? "on (idle 10 s, interval 5 s, 3 probes)" : "off",
+             (int)(RX_SILENCE_LIMIT_US / 1000000));
+    m_lastRxUs = esp_timer_get_time();
     return true;
 }
 
@@ -96,11 +106,22 @@ int StratumTransport::recv(void* buf, size_t len)
     int ret = esp_transport_read(m_t, (char*)buf, (int)len, 30000);
 
     if (ret > 0) {
+        m_lastRxUs = esp_timer_get_time();
         return ret;
     }
 
     // esp_tcp_transport_err_t: timeout == 0 :contentReference[oaicite:4]{index=4}
     if (ret == ERR_TCP_TRANSPORT_CONNECTION_TIMEOUT) {
+        // trinetra12: nothing within this 30-s read. Fine if the pool spoke recently; if it has been silent for
+        // RX_SILENCE_LIMIT_US, report a hard error (not EAGAIN) so receiveJsonRpcLine() gives up and the stratum
+        // task closes the socket and reconnects.
+        int64_t silentUs = esp_timer_get_time() - m_lastRxUs;
+        if (silentUs > RX_SILENCE_LIMIT_US) {
+            ESP_LOGW(TAG, "no data from the pool for %d s -> treating the link as dead, reconnecting",
+                     (int)(silentUs / 1000000));
+            errno = ETIMEDOUT;
+            return -1;
+        }
         errno = EAGAIN;
         return -1;
     }
@@ -138,19 +159,20 @@ void StratumTransport::close()
 
 void StratumTransport::applyKeepAlive_()
 {
-    esp_transport_keep_alive_t ka = {};
-    ka.keep_alive_enable = Config::isStratumKeepaliveEnabled();
-    ka.keep_alive_idle = 10;
-    ka.keep_alive_interval = 5;
-    ka.keep_alive_count = 3;
+    // trinetra12: the transport keeps the POINTER, so the config lives in the object (was a dead local variable)
+    m_keepAlive = {};
+    m_keepAlive.keep_alive_enable = Config::isStratumKeepaliveEnabled();
+    m_keepAlive.keep_alive_idle = 10;
+    m_keepAlive.keep_alive_interval = 5;
+    m_keepAlive.keep_alive_count = 3;
 
-    if (!ka.keep_alive_enable) {
+    if (!m_keepAlive.keep_alive_enable) {
         return;
     }
 
     if (m_use_tls) {
-        esp_transport_ssl_set_keep_alive(m_t, &ka);
+        esp_transport_ssl_set_keep_alive(m_t, &m_keepAlive);
     } else {
-        esp_transport_tcp_set_keep_alive(m_t, &ka);
+        esp_transport_tcp_set_keep_alive(m_t, &m_keepAlive);
     }
 }

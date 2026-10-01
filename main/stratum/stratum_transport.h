@@ -25,6 +25,15 @@ private:
 
 protected:
     esp_transport_handle_t m_t;
+
+    // trinetra12 (same fix as upstream develop): esp_transport_*_set_keep_alive() stores this POINTER (no copy)
+    // and dereferences it later inside esp_transport_connect(), so the config must outlive applyKeepAlive_().
+    // It used to be a local variable there: the keepalive settings were stack garbage, a dead pool link was
+    // never detected, and the miner hashed into a half-open socket (2026-10-01 17:56, 11 minutes).
+    esp_transport_keep_alive_t m_keepAlive = {};
+
+    // trinetra12: esp_timer time (microseconds) of the last byte received from the pool; see recv()
+    int64_t m_lastRxUs = 0;
 };
 
 class TcpStratumTransport : public StratumTransport {
